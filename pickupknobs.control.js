@@ -12,8 +12,9 @@ var MODE_MACRO = 0;
 var MODE_COMMON = 1;
 var MODE_ENVELOPE = 2;
 var MODE_PARAMS = 3;
+var MODE_CMACRO = 4;
 
-var NUM_MODES = 4;
+var NUM_MODES = 5;
 var PARAM_PAGE = 0;
 
 var ROT_MODE = MODE_MACRO;
@@ -48,6 +49,8 @@ function enableIndication() {
         cursorDevice.getParameter(i).setIndication(ROT_MODE == MODE_PARAMS);
     }
     if (ROT_MODE == MODE_MACRO)
+        primaryDevice.isMacroSectionVisible().set(true);
+    else if (ROT_MODE == MODE_CMACRO)
         cursorDevice.isMacroSectionVisible().set(true);
 //    else
 //        cursorDevice.isMacroSectionVisible().set(false);
@@ -81,18 +84,19 @@ function init() {
     host.getMidiInPort(0).setMidiCallback(onMidiPort1);
     noteIn = host.getMidiInPort(0).createNoteInput("Notes");
     out = host.getMidiOutPort(0);
-    //noteIn.setShouldConsumeEvents(false);
+    noteIn.setShouldConsumeEvents(false);
 
     cursorTrack = host.createArrangerCursorTrack(2, 16);
-    //primaryDevice = cursorTrack.getPrimaryDevice();
+    primaryDevice = cursorTrack.getPrimaryDevice();
     cursorDevice = host.createEditorCursorDevice();    
     //cursorDevice.addNameObserver(50, "", deviceNameObserver);
 
     for (var i = 0; i < 8; i++ ) {
-        cursorDevice.getMacro(i).getAmount().addValueObserver(128, makeValueObserver(MODE_MACRO, i));
+        primaryDevice.getMacro(i).getAmount().addValueObserver(128, makeValueObserver(MODE_MACRO, i));
         cursorDevice.getCommonParameter(i).addValueObserver(128, makeValueObserver(MODE_COMMON, i));
         cursorDevice.getEnvelopeParameter(i).addValueObserver(128, makeValueObserver(MODE_ENVELOPE, i));
         cursorDevice.getParameter(i).addValueObserver(128, makeValueObserver(MODE_PARAMS, i));
+        cursorDevice.getMacro(i).getAmount().addValueObserver(128, makeValueObserver(MODE_CMACRO, i));
 
         for (var j = 0; j < NUM_MODES; j++) {
             observed[j].changes[i] = false;
@@ -120,7 +124,7 @@ function onMidiPort1(status, data1, data2) {
                 var value;
                 switch(ROT_MODE) {
                     case MODE_MACRO:
-                        value = cursorDevice.getMacro(index).getAmount();
+                        value = primaryDevice.getMacro(index).getAmount();
                         value.set(data2, 128);
                         break;
                     case MODE_COMMON:
@@ -135,6 +139,10 @@ function onMidiPort1(status, data1, data2) {
                         value = cursorDevice.getParameter(index);
                         value.set(data2, 128);
                         break; 
+                    case MODE_CMACRO:
+                        value = cursorDevice.getMacro(index).getAmount();
+                        value.set(data2, 128);
+                        break; 
                 };
             } else {
                 host.showPopupNotification("Pickup " + MODENAMES[ROT_MODE] + " " + (index + 1) + ": " + 
@@ -144,21 +152,25 @@ function onMidiPort1(status, data1, data2) {
         } else if (isCC(data1)) {
             var index = data1 - CC_LOW;
             if (data2 > 0) {
+                out.sendMidi(0xb0, CC_LOW + PARAM_PAGE, 0);
                 if (ROT_MODE == MODE_PARAMS && PARAM_PAGE == index) {
                     switch(index) {
-                        case 0: ROT_MODE = MODE_MACRO; host.showPopupNotification("Macros"); break;
+                        case 0: ROT_MODE = MODE_MACRO; host.showPopupNotification("Macros (Primary Device)"); break;
                         case 1: ROT_MODE = MODE_COMMON; host.showPopupNotification("Common");break;
                         case 2: ROT_MODE = MODE_ENVELOPE; host.showPopupNotification("Envelope"); break;
-                        case 3: cursorTrack.selectFirst(); //cursorTrack.selectNext();
+                        case 3: ROT_MODE = MODE_CMACRO; host.showPopupNotification("Macros (Current Device)"); break;
+                        default: PARAM_PAGE = index + 4; host.showPopupNotification("Parameters Page " + (PARAM_PAGE + 1)); cursorDevice.setParameterPage(PARAM_PAGE); break;
                     }
                 } else {
-                    host.showPopupNotification("Parameters Page " + (index + 1));
-                    ROT_MODE = MODE_PARAMS;
                     PARAM_PAGE = index;
-                    cursorDevice.setParameterPage(index);                    
-                    //out.sendMidi(0xb0, data1, 1);
+                    host.showPopupNotification("Parameters Page " + (PARAM_PAGE + 1));
+                    ROT_MODE = MODE_PARAMS;
+                    cursorDevice.setParameterPage(PARAM_PAGE);                    
                 }
                 enableIndication();
+            } else {
+                if (ROT_MODE == MODE_PARAMS) 
+                    out.sendMidi(0xb0, data1, 1);               
             }
         } else {
             println("Uknown CC " + data1);
