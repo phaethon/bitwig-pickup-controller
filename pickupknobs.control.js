@@ -1,3 +1,7 @@
+// See documentation and latest code on http://github.com/phaethon/bitwig-pickup-controller
+//
+
+
 loadAPI(1);
 
 host.defineController("Generic", "Pickup Knobs", "1.0", "1965a650-634a-11e5-a837-0800201c9a66");
